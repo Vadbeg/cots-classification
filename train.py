@@ -9,9 +9,6 @@ from pytorch_lightning.utilities.cli import MODEL_REGISTRY, LightningCLI
 from cots_classification.modules.training.classification_training import (
     ClassificationLightningModel,
 )
-from cots_classification.modules.training.image_template_training import (
-    ImageTemplateLightningModel,
-)
 
 if __name__ == '__main__':
     MODEL_REGISTRY.register_classes(flash.image, LightningModule)
