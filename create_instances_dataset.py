@@ -20,7 +20,7 @@ def create_instances_cli(
     ),
     border: float = typer.Option(
         default=0.1, help='Border around image which will be used for cropping'
-    )
+    ),
 ) -> None:
     warnings.filterwarnings('ignore')
 

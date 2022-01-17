@@ -3,9 +3,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from cots_classification.data_prep.data_preparation_base import (
-    ConventionalDataPrepBase,
-)
+from cots_classification.data_prep.data_preparation_base import ConventionalDataPrepBase
 
 
 class DataPrepDataframe(ConventionalDataPrepBase):
@@ -37,12 +35,7 @@ class DataPrepDataframe(ConventionalDataPrepBase):
 
         for curr_box in ann_boxes:
             boxes.append(
-                [
-                    curr_box['x'],
-                    curr_box['y'],
-                    curr_box['width'],
-                    curr_box['height']
-                ]
+                [curr_box['x'], curr_box['y'], curr_box['width'], curr_box['height']]
             )
 
         return boxes

@@ -2,7 +2,7 @@
 
 import abc
 from pathlib import Path
-from typing import Any, Dict, List, Union, Tuple
+from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -83,22 +83,19 @@ class ConventionalDataPrepBase(DataPrepBase):
                 bbox=bbox,
                 image_name=image_name,
                 crops_image_root=crops_image_root,
-                extension=extension
+                extension=extension,
             )
 
     def _crop_and_save_true_neg_boxes(
         self,
         image: np.ndarray,
-        annotations: Tuple[Path, List[List[int]]],
+        annotations: Tuple[Path, List[List[float]]],
         crops_image_root: Path,
         extension: str = '.jpg',
-    ):
+    ) -> None:
         image_name = annotations[0].stem
         for idx in range(len(annotations[1])):
-            bbox = self._get_not_intersected_box(
-                image=image,
-                boxes=annotations[1]
-            )
+            bbox = self._get_not_intersected_box(image=image, boxes=annotations[1])
 
             self._crop_and_save_box(
                 idx=idx,
@@ -106,14 +103,14 @@ class ConventionalDataPrepBase(DataPrepBase):
                 bbox=bbox,
                 image_name=image_name,
                 crops_image_root=crops_image_root,
-                extension=extension
+                extension=extension,
             )
 
     def _crop_and_save_box(
         self,
         idx: int,
         image: np.ndarray,
-        bbox: List[int],
+        bbox: Sequence[float],
         image_name: str,
         crops_image_root: Path,
         extension: str = '.jpg',
@@ -136,45 +133,37 @@ class ConventionalDataPrepBase(DataPrepBase):
     def _get_not_intersected_box(
         self,
         image: np.ndarray,
-        boxes: List[List[int]],
-    ):
+        boxes: List[List[float]],
+    ) -> List[float]:
         bbox = self._get_random_bbox(image=image)
 
         iou_value = self._get_iou_between_box_and_ann_boxes(
-            box=bbox,
-            annotation_boxes=boxes
+            box=bbox, annotation_boxes=boxes
         )
         while iou_value > 0:
             bbox = self._get_random_bbox(image=image)
 
             iou_value = self._get_iou_between_box_and_ann_boxes(
-                box=bbox,
-                annotation_boxes=boxes
+                box=bbox, annotation_boxes=boxes
             )
 
         return bbox
 
     @staticmethod
-    def _get_iou_between_box_and_ann_boxes(box: List[int], annotation_boxes: List[List[int]]) -> float:
-        bb1 = {
-            'x1': box[0],
-            'x2': box[0] + box[2],
-            'y1': box[1],
-            'y2': box[1] + box[3]
-        }
+    def _get_iou_between_box_and_ann_boxes(
+        box: List[float], annotation_boxes: List[List[float]]
+    ) -> float:
+        bb1 = {'x1': box[0], 'x2': box[0] + box[2], 'y1': box[1], 'y2': box[1] + box[3]}
 
         for curr_ann_box in annotation_boxes:
             bb2 = {
                 'x1': curr_ann_box[0],
                 'x2': curr_ann_box[0] + curr_ann_box[2],
                 'y1': curr_ann_box[1],
-                'y2': curr_ann_box[1] + curr_ann_box[3]
+                'y2': curr_ann_box[1] + curr_ann_box[3],
             }
 
-            iou_value = get_iou(
-                bb1=bb1,
-                bb2=bb2
-            )
+            iou_value = get_iou(bb1=bb1, bb2=bb2)
 
             if iou_value > 0:
                 return iou_value
@@ -182,9 +171,7 @@ class ConventionalDataPrepBase(DataPrepBase):
         return 0
 
     @staticmethod
-    def _get_random_bbox(
-        image: np.ndarray
-    ) -> List[int]:
+    def _get_random_bbox(image: np.ndarray) -> List[float]:
         w = np.random.randint(32, 128)
         h = np.random.randint(32, 128)
 
@@ -207,7 +194,7 @@ class ConventionalDataPrepBase(DataPrepBase):
 
     @staticmethod
     def _crop_image(
-        image: np.ndarray, bbox: List[float], border: float = 0.1
+        image: np.ndarray, bbox: Sequence[float], border: float = 0.1
     ) -> np.ndarray:
         x_border = int((bbox[3] - bbox[1]) * border)
         y_border = int((bbox[2] - bbox[0]) * border)
@@ -232,7 +219,7 @@ class ConventionalDataPrepBase(DataPrepBase):
 
     def _load_nad_preprocess_annotations(
         self, annotations_path: Path
-    ) -> Dict[int, List[Dict[str, Union[List[float], int, str]]]]:
+    ) -> Dict[str, Tuple[Path, List[List[int]]]]:
         meta = self._load_annotations(annotations_path=annotations_path)
         preprocessed_meta = self._preprocess_annotations(annotations=meta)
 
@@ -242,30 +229,34 @@ class ConventionalDataPrepBase(DataPrepBase):
         meta: pd.DataFrame = pd.read_csv(filepath_or_buffer=annotations_path)
         meta = self._preprocess_dataframe(annotations_dataframe=meta)
 
-        annotations = meta.groupby('image_id').apply(
-            lambda x: x.to_json(orient='records')
-        ).tolist()
+        annotations = (
+            meta.groupby('image_id')
+            .apply(lambda x: x.to_json(orient='records'))
+            .tolist()
+        )
         annotations = list(map(lambda x: eval(x)[0], annotations))
 
         return annotations
 
-    def _preprocess_dataframe(self, annotations_dataframe: pd.DataFrame) -> pd.DataFrame:
+    def _preprocess_dataframe(
+        self, annotations_dataframe: pd.DataFrame
+    ) -> pd.DataFrame:
         if isinstance(annotations_dataframe[self.ANNOTATIONS_COLUMN].loc[0], str):
-            annotations_dataframe[
+            annotations_dataframe[self.ANNOTATIONS_COLUMN] = annotations_dataframe[
                 self.ANNOTATIONS_COLUMN
-            ] = annotations_dataframe[self.ANNOTATIONS_COLUMN].apply(eval)
+            ].apply(eval)
 
         annotations_dataframe[self.VIDEO_ID_COLUMN] = annotations_dataframe[
             self.VIDEO_ID_COLUMN
         ].apply(int)
-        annotations_dataframe[
+        annotations_dataframe[self.VIDEO_FRAME_COLUMN] = annotations_dataframe[
             self.VIDEO_FRAME_COLUMN
-        ] = annotations_dataframe[self.VIDEO_FRAME_COLUMN].apply(int)
+        ].apply(int)
 
         return annotations_dataframe
 
     @staticmethod
-    def _convert_xywh_to_xyxy_coords(x: List[float]) -> List[float]:
+    def _convert_xywh_to_xyxy_coords(x: Sequence[float]) -> List[float]:
         y = [
             x[0],
             x[1],
@@ -278,9 +269,9 @@ class ConventionalDataPrepBase(DataPrepBase):
     @abc.abstractmethod
     def _preprocess_annotations(
         self, annotations: List[Dict[str, Any]]
-    ) -> Dict[int, List[Dict[str, Union[List[float], int, str]]]]:
+    ) -> Dict[str, Tuple[Path, List[List[int]]]]:
         pass
 
     @abc.abstractmethod
-    def _get_image_path_by_id(self, image_id: int) -> str:
+    def _get_image_path_by_id(self, image_id: str) -> Path:
         pass
