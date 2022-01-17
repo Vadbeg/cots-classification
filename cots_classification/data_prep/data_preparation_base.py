@@ -9,6 +9,8 @@ import pandas as pd
 from cv2 import cv2
 from tqdm import tqdm
 
+from cots_classification.data_prep.utils import get_iou
+
 
 class DataPrepBase(abc.ABC):
     @abc.abstractmethod
@@ -49,10 +51,15 @@ class ConventionalDataPrepBase(DataPrepBase):
             image = self._load_image(image_path=image_path)
 
             if image is not None:
-                self._crop_and_save_all_images(
+                self._crop_and_save_true_pos_boxes(
                     image=image,
                     annotations=curr_annotations,
-                    new_image_root=self.crop_folder,
+                    crops_image_root=self.crop_folder.joinpath('cot'),
+                )
+                self._crop_and_save_true_neg_boxes(
+                    image=image,
+                    annotations=curr_annotations,
+                    crops_image_root=self.crop_folder.joinpath('no_cot'),
                 )
 
     @staticmethod
@@ -61,27 +68,130 @@ class ConventionalDataPrepBase(DataPrepBase):
 
         return image
 
-    def _crop_and_save_all_images(
+    def _crop_and_save_true_pos_boxes(
         self,
         image: np.ndarray,
         annotations: Tuple[Path, List[List[int]]],
-        new_image_root: Path,
+        crops_image_root: Path,
         extension: str = '.jpg',
     ) -> None:
         image_name = annotations[0].stem
         for idx, bbox in enumerate(annotations[1]):
-            bbox = self._convert_xywh_to_xyxy_coords(x=bbox)
-            cropped_image = self._crop_image(image=image, bbox=bbox, border=self.border)
-
-            cropped_image_path = self._create_image_crop_path(
-                image_name=image_name,
+            self._crop_and_save_box(
                 idx=idx,
-                extension=extension,
-                new_image_root=new_image_root,
+                image=image,
+                bbox=bbox,
+                image_name=image_name,
+                crops_image_root=crops_image_root,
+                extension=extension
             )
 
-            if cropped_image.shape[0] > 2 and cropped_image.shape[1] > 2:
-                cv2.imwrite(str(cropped_image_path), cropped_image)
+    def _crop_and_save_true_neg_boxes(
+        self,
+        image: np.ndarray,
+        annotations: Tuple[Path, List[List[int]]],
+        crops_image_root: Path,
+        extension: str = '.jpg',
+    ):
+        image_name = annotations[0].stem
+        for idx in range(len(annotations[1])):
+            bbox = self._get_not_intersected_box(
+                image=image,
+                boxes=annotations[1]
+            )
+
+            self._crop_and_save_box(
+                idx=idx,
+                image=image,
+                bbox=bbox,
+                image_name=image_name,
+                crops_image_root=crops_image_root,
+                extension=extension
+            )
+
+    def _crop_and_save_box(
+        self,
+        idx: int,
+        image: np.ndarray,
+        bbox: List[int],
+        image_name: str,
+        crops_image_root: Path,
+        extension: str = '.jpg',
+    ) -> None:
+        crops_image_root.mkdir(parents=True, exist_ok=True)
+
+        bbox = self._convert_xywh_to_xyxy_coords(x=bbox)
+        cropped_image = self._crop_image(image=image, bbox=bbox, border=self.border)
+
+        cropped_image_path = self._create_image_crop_path(
+            image_name=image_name,
+            idx=idx,
+            extension=extension,
+            new_image_root=crops_image_root,
+        )
+
+        if cropped_image.shape[0] > 2 and cropped_image.shape[1] > 2:
+            cv2.imwrite(str(cropped_image_path), cropped_image)
+
+    def _get_not_intersected_box(
+        self,
+        image: np.ndarray,
+        boxes: List[List[int]],
+    ):
+        bbox = self._get_random_bbox(image=image)
+
+        iou_value = self._get_iou_between_box_and_ann_boxes(
+            box=bbox,
+            annotation_boxes=boxes
+        )
+        while iou_value > 0:
+            bbox = self._get_random_bbox(image=image)
+
+            iou_value = self._get_iou_between_box_and_ann_boxes(
+                box=bbox,
+                annotation_boxes=boxes
+            )
+
+        return bbox
+
+    @staticmethod
+    def _get_iou_between_box_and_ann_boxes(box: List[int], annotation_boxes: List[List[int]]) -> float:
+        bb1 = {
+            'x1': box[0],
+            'x2': box[0] + box[2],
+            'y1': box[1],
+            'y2': box[1] + box[3]
+        }
+
+        for curr_ann_box in annotation_boxes:
+            bb2 = {
+                'x1': curr_ann_box[0],
+                'x2': curr_ann_box[0] + curr_ann_box[2],
+                'y1': curr_ann_box[1],
+                'y2': curr_ann_box[1] + curr_ann_box[3]
+            }
+
+            iou_value = get_iou(
+                bb1=bb1,
+                bb2=bb2
+            )
+
+            if iou_value > 0:
+                return iou_value
+
+        return 0
+
+    @staticmethod
+    def _get_random_bbox(
+        image: np.ndarray
+    ) -> List[int]:
+        w = np.random.randint(32, 128)
+        h = np.random.randint(32, 128)
+
+        x = np.random.randint(0, image.shape[1] - w)
+        y = np.random.randint(0, image.shape[0] - h)
+
+        return [x, y, w, h]
 
     @staticmethod
     def _create_image_crop_path(
